@@ -10,19 +10,7 @@ from strategy_engine import get_signals_streaming
 ALPACA_API_KEY = os.environ.get("ALPACA_API_KEY", "")
 ALPACA_SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "")
 
-CURRENCY_SYMBOLS = {
-    "USD": "$",
-    "NGN": "₦",
-    "EUR": "€",
-    "CNY": "¥",
-}
-
-CURRENCY_TO_USD = {
-    "USD": 1.0,
-    "NGN": 0.00063,
-    "EUR": 1.09,
-    "CNY": 0.138,
-}
+from currency_utils import CURRENCY_SYMBOLS, CURRENCY_TO_USD, SUPPORTED_CURRENCIES
 
 
 class TradingBot:
@@ -388,6 +376,7 @@ class TradingBot:
                 metrics=metrics,
                 equity_curve=[],
                 notes=f"Live bot session — runtime {int(self.runtime)}s",
+                currency=self.currency,
             )
         except Exception as e:
             self._log(f"[HISTORY] Could not save session: {e}")

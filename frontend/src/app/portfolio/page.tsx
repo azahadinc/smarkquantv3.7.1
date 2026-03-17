@@ -16,6 +16,30 @@ import {
 const BASE_EQUITY = 0;
 const ALLOCATION_COLORS = ["#f59e0b", "#3b82f6", "#10b981", "#8b5cf6", "#ef4444", "#06b6d4"];
 
+// ── currency conversion (mirrors backend/currency_utils.py) ────────────────
+const CURRENCY_TO_USD: Record<string, number> = {
+  USD: 1.0, NGN: 0.000645, EUR: 1.09, GBP: 1.27, CNY: 0.138,
+  JPY: 0.0066, CAD: 0.74, AUD: 0.65, CHF: 1.13, ZAR: 0.054,
+};
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: "$", NGN: "₦", EUR: "€", GBP: "£", CNY: "¥",
+  JPY: "¥", CAD: "C$", AUD: "A$", CHF: "Fr", ZAR: "R",
+};
+function toUsd(amount: number, currency?: string): number {
+  const rate = CURRENCY_TO_USD[(currency ?? "USD").toUpperCase()] ?? 1.0;
+  return amount * rate;
+}
+function currSym(currency?: string): string {
+  return CURRENCY_SYMBOLS[(currency ?? "USD").toUpperCase()] ?? "$";
+}
+function fmtNative(amount: number, currency?: string): string {
+  const sym = currSym(currency);
+  const abs = Math.abs(amount);
+  if (abs >= 1_000_000) return sym + fmt(abs / 1_000_000, 2) + "M";
+  if (abs >= 1_000) return sym + fmt(abs / 1_000, 2) + "K";
+  return sym + fmt(abs, 2);
+}
+
 // ── helpers ────────────────────────────────────────────────────────────────
 function fmt(n: number, d = 2) {
   return new Intl.NumberFormat("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
@@ -52,7 +76,7 @@ function AnimatedNumber({ value }: { value: number }) {
 type Session = {
   id: string; session_type: string; strategy: string; symbol: string;
   exchange: string; timeframe: string; start_date: string; end_date: string;
-  created_at: string; notes: string;
+  created_at: string; notes: string; currency: string;
   pnl_value: number; pnl_pct: number; win_rate: number;
   sharpe_ratio: number; smart_sharpe: number; sortino_ratio: number;
   smart_sortino: number; calmar_ratio: number; omega_ratio: number;
@@ -125,20 +149,21 @@ export default function PortfolioPage() {
       setSessions(s);
       if (acc && !acc.detail) setAlpaca(acc);
 
-      // compute real total assets from session balances:
+      // compute real total assets from session balances, converting each to USD:
       // use finishing_balance if set, otherwise fall back to starting_balance + pnl_value
       const realTotalAssets = s.reduce((sum, x) => {
+        const cur = x.currency || "USD";
         const finishing = x.finishing_balance || 0;
-        if (finishing > 0) return sum + finishing;
-        return sum + (x.starting_balance || 0) + (x.pnl_value || 0);
+        if (finishing > 0) return sum + toUsd(finishing, cur);
+        return sum + toUsd((x.starting_balance || 0) + (x.pnl_value || 0), cur);
       }, 0);
       if (realTotalAssets > 0) setEquity(realTotalAssets);
 
-      // seed day pnl from REAL today's sessions only — no fake fallback
+      // seed day pnl from REAL today's sessions only — converted to USD
       const today = new Date().toISOString().slice(0, 10);
       const todayPnl = s
         .filter(x => x.created_at?.startsWith(today))
-        .reduce((sum, x) => sum + (x.pnl_value || 0), 0);
+        .reduce((sum, x) => sum + toUsd(x.pnl_value || 0, x.currency), 0);
       dayPnlRef.current = todayPnl;
       setDayPnl(todayPnl);
       setLoading(false);
@@ -177,13 +202,13 @@ export default function PortfolioPage() {
   const backtests = sessions.filter(s => s.session_type === "backtest");
   const liveSessions = sessions.filter(s => s.session_type === "live" || s.session_type === "paper");
 
-  const totalPnl = sessions.reduce((s, x) => s + (x.pnl_value || 0), 0);
+  const totalPnl = sessions.reduce((s, x) => s + toUsd(x.pnl_value || 0, x.currency), 0);
   const totalTrades = sessions.reduce((s, x) => s + (x.total_trades || 0), 0);
   const totalWins = sessions.reduce((s, x) => s + (x.total_winning_trades || 0), 0);
   const totalLosses = sessions.reduce((s, x) => s + (x.total_losing_trades || 0), 0);
-  const totalFees = sessions.reduce((s, x) => s + (x.fee || 0), 0);
-  const totalGrossProfit = sessions.reduce((s, x) => s + (x.gross_profit || 0), 0);
-  const totalGrossLoss = sessions.reduce((s, x) => s + (x.gross_loss || 0), 0);
+  const totalFees = sessions.reduce((s, x) => s + toUsd(x.fee || 0, x.currency), 0);
+  const totalGrossProfit = sessions.reduce((s, x) => s + toUsd(x.gross_profit || 0, x.currency), 0);
+  const totalGrossLoss = sessions.reduce((s, x) => s + toUsd(x.gross_loss || 0, x.currency), 0);
   const profitSessions = sessions.filter(s => s.pnl_value > 0).length;
   const sessionWinRate = sessions.length ? (profitSessions / sessions.length) * 100 : 0;
   const sharpes = sessions.filter(s => s.sharpe_ratio).map(s => s.sharpe_ratio);
@@ -703,18 +728,36 @@ export default function PortfolioPage() {
                           </span>
                           {s.symbol && <span className="text-slate-500 text-xs">{s.symbol}</span>}
                           {s.timeframe && <span className="text-slate-600 text-xs">{s.timeframe}</span>}
+                          {s.currency && s.currency !== "USD" && (
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono">
+                              {s.currency}
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-500">
                           <span className="flex items-center gap-1"><Clock size={10} /> {new Date(s.created_at).toLocaleString()}</span>
                           <span>{s.total_trades} trades</span>
                           {s.win_rate > 0 && <span>{fmt(s.win_rate * 100, 1)}% win</span>}
                           {s.sharpe_ratio > 0 && <span>Sharpe {fmt(s.sharpe_ratio, 3)}</span>}
+                          {s.starting_balance > 0 && (
+                            <span className="text-slate-600">
+                              cap: {fmtNative(s.starting_balance, s.currency)}
+                              {s.currency && s.currency !== "USD" && (
+                                <span className="text-slate-700"> ≈ {fmtC(toUsd(s.starting_balance, s.currency))}</span>
+                              )}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
                     <div className="text-right shrink-0 ml-4">
                       <div className={`font-bold text-base ${s.pnl_value >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                        {s.pnl_value >= 0 ? "+" : ""}{fmtC(s.pnl_value)}
+                        {s.pnl_value >= 0 ? "+" : ""}{fmtNative(s.pnl_value, s.currency)}
+                        {s.currency && s.currency !== "USD" && (
+                          <span className="text-xs text-slate-500 ml-1">
+                            ≈ {s.pnl_value >= 0 ? "+" : ""}{fmtC(toUsd(s.pnl_value, s.currency))}
+                          </span>
+                        )}
                       </div>
                       <div className={`text-xs ${s.pnl_pct >= 0 ? "text-emerald-500" : "text-red-500"}`}>
                         {s.pnl_pct >= 0 ? "+" : ""}{fmt(s.pnl_pct, 2)}%

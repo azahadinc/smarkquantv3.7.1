@@ -8,6 +8,13 @@ from typing import List, Optional, Dict, Any
 from db_config import DB_PATH
 
 
+def _migrate(conn):
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(trading_history)").fetchall()}
+    if "currency" not in existing:
+        conn.execute("ALTER TABLE trading_history ADD COLUMN currency TEXT DEFAULT 'USD'")
+        conn.commit()
+
+
 def init_history_table():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("""
@@ -22,6 +29,7 @@ def init_history_table():
             end_date TEXT,
             created_at TEXT NOT NULL,
             notes TEXT,
+            currency TEXT DEFAULT 'USD',
 
             -- Performance Metrics
             pnl_value REAL DEFAULT 0,
@@ -71,6 +79,7 @@ def init_history_table():
         )
     """)
     conn.commit()
+    _migrate(conn)
     conn.close()
 
 
@@ -85,6 +94,7 @@ def save_session(
     metrics: Dict[str, Any],
     equity_curve: Optional[List[float]] = None,
     notes: str = "",
+    currency: str = "USD",
 ) -> str:
     init_history_table()
     session_id = str(uuid.uuid4())[:12]
@@ -99,11 +109,13 @@ def save_session(
     starting = metrics.get("initial_capital", metrics.get("starting_balance", 0))
     finishing = metrics.get("final_equity", metrics.get("finishing_balance", starting))
 
+    currency = (currency or "USD").upper()
+
     conn = sqlite3.connect(DB_PATH)
     conn.execute("""
         INSERT INTO trading_history (
             id, session_type, strategy, symbol, exchange, timeframe,
-            start_date, end_date, created_at, notes,
+            start_date, end_date, created_at, notes, currency,
             pnl_value, pnl_pct, win_rate, sharpe_ratio, smart_sharpe,
             sortino_ratio, smart_sortino, calmar_ratio, omega_ratio, serenity_index,
             avg_win_loss, avg_win, avg_loss,
@@ -115,7 +127,7 @@ def save_session(
             shorts_percentage, shorts_count, fee, total_open_trades, open_pl,
             equity_curve, raw_metrics
         ) VALUES (
-            ?,?,?,?,?,?,?,?,?,?,
+            ?,?,?,?,?,?,?,?,?,?,?,
             ?,?,?,?,?,?,?,?,?,?,
             ?,?,?,?,?,?,?,?,?,?,
             ?,?,?,?,?,?,?,?,?,?,
@@ -123,7 +135,7 @@ def save_session(
         )
     """, (
         session_id, session_type, strategy, symbol, exchange, timeframe,
-        start_date, end_date, now, notes,
+        start_date, end_date, now, notes, currency,
         round(metrics.get("net_profit_val", metrics.get("pnl_value", 0)), 2),
         round(metrics.get("net_profit", metrics.get("pnl_pct", 0)), 4),
         round(metrics.get("win_rate", 0), 4),

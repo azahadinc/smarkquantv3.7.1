@@ -162,6 +162,7 @@ class HistorySaveRequest(BaseModel):
     notes: str = ""
     metrics: dict = {}
     equity_curve: list = []
+    currency: str = "USD"
 
 class HistoryNotesRequest(BaseModel):
     notes: str
@@ -191,6 +192,7 @@ def create_history_session(req: HistorySaveRequest):
         metrics=req.metrics,
         equity_curve=req.equity_curve,
         notes=req.notes,
+        currency=req.currency,
     )
     return {"status": "saved", "id": session_id}
 
@@ -583,8 +585,9 @@ class BotCreateRequest(BaseModel):
 def create_bot(req: BotCreateRequest):
     if req.amount <= 0:
         raise HTTPException(status_code=400, detail="Amount must be greater than 0")
-    if req.currency not in ["USD", "NGN", "EUR", "CNY"]:
-        raise HTTPException(status_code=400, detail="Currency must be USD, NGN, EUR, or CNY")
+    from currency_utils import SUPPORTED_CURRENCIES
+    if req.currency not in SUPPORTED_CURRENCIES:
+        raise HTTPException(status_code=400, detail=f"Currency must be one of: {', '.join(SUPPORTED_CURRENCIES)}")
     bot = bot_manager.create_bot(req.symbol, req.exchange, req.amount, req.currency, req.strategy, req.timeframe)
     return {"status": "created", "bot": bot.to_dict()}
 
@@ -632,6 +635,15 @@ def get_bot(bot_id: str):
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
+
+@app.get("/currencies")
+def get_currencies():
+    from currency_utils import SUPPORTED_CURRENCIES, CURRENCY_SYMBOLS, CURRENCY_TO_USD
+    return {
+        "currencies": SUPPORTED_CURRENCIES,
+        "symbols": CURRENCY_SYMBOLS,
+        "rates_to_usd": CURRENCY_TO_USD,
+    }
 
 @app.get("/routes")
 def get_active_routes():
