@@ -72,6 +72,33 @@ Get your keys from [alpaca.markets](https://alpaca.markets/) → Account → API
 - `GET /alpaca/positions?paper=true/false` — all open positions
 - `GET /alpaca/orders?paper=true/false&limit=20` — recent orders
 
+## Multi-Currency Support
+
+All live/paper bot sessions support multiple currencies: USD, NGN, EUR, GBP, CNY, JPY, CAD, AUD, CHF, ZAR.
+
+- `backend/currency_utils.py` holds all exchange rates and symbols
+- Currency is stored per session in `trading_history` table (`currency` column)
+- Portfolio page converts all session values to USD using `toUsd()` before summing
+- Per-session currency badges and native currency amounts shown in trades tab
+
+## Portfolio Dashboard
+
+The portfolio page (`/portfolio`) is the main fund overview:
+
+- **AUM Hero**: Shows total live/paper assets (converted to USD). Backtests are excluded from AUM because they reuse the same simulated capital — their PnL is shown separately as "Simulated PnL"
+- **PnL breakdown**: Live/Paper PnL vs Simulated (Backtest) PnL vs All sessions combined
+- **Compact notation**: `fmtFull()` handles K/M/B/T/Q/QQ suffixes to avoid huge raw number display
+- **Alpaca integration**: Available cash, buying power, and position values use Alpaca API data when connected; falls back to estimates from equity
+
+## Live Bot Features
+
+Each bot card on the Live Dashboard (`/live`) has an expandable details section (chart icon button):
+
+- **Equity curve chart**: Mini Recharts LineChart showing equity snapshots over time, colored green/red based on P&L
+- **Completed trades table**: All closed trades showing entry/exit price, side, P&L, reason (SL/TP), and time
+- **Equity snapshots**: Recorded every 5 ticks in memory, saved to trade history DB when bot stops
+- **Completed trades**: Tracked in memory per bot session, last 50 shown in details panel
+
 ## Dependencies
 
 Frontend uses npm (package-lock.json present).

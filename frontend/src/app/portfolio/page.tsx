@@ -46,13 +46,22 @@ function fmt(n: number, d = 2) {
 }
 function fmtC(n: number) {
   const abs = Math.abs(n);
-  if (abs >= 1e9) return (n < 0 ? "-$" : "$") + fmt(abs / 1e9, 3) + "B";
-  if (abs >= 1e6) return (n < 0 ? "-$" : "$") + fmt(abs / 1e6, 2) + "M";
-  if (abs >= 1e3) return (n < 0 ? "-$" : "$") + fmt(abs / 1e3, 2) + "K";
-  return (n < 0 ? "-$" : "$") + fmt(abs, 2);
+  const sign = n < 0 ? "-$" : "$";
+  if (abs >= 1e15) return sign + fmt(abs / 1e15, 2) + "Q";
+  if (abs >= 1e12) return sign + fmt(abs / 1e12, 2) + "T";
+  if (abs >= 1e9)  return sign + fmt(abs / 1e9,  2) + "B";
+  if (abs >= 1e6)  return sign + fmt(abs / 1e6,  2) + "M";
+  if (abs >= 1e3)  return sign + fmt(abs / 1e3,  1) + "K";
+  return sign + fmt(abs, 2);
 }
 function fmtFull(n: number) {
-  return "$" + new Intl.NumberFormat("en-US", { minimumFractionDigits: 2 }).format(n);
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-$" : "$";
+  if (abs >= 1e15) return sign + fmt(abs / 1e15, 3) + "Q";
+  if (abs >= 1e12) return sign + fmt(abs / 1e12, 3) + "T";
+  if (abs >= 1e9)  return sign + fmt(abs / 1e9,  3) + "B";
+  if (abs >= 1e6)  return sign + fmt(abs / 1e6,  3) + "M";
+  return sign + new Intl.NumberFormat("en-US", { minimumFractionDigits: 2 }).format(abs);
 }
 
 // ── animated ticker ────────────────────────────────────────────────────────
@@ -69,7 +78,7 @@ function AnimatedNumber({ value }: { value: number }) {
     }, 16);
     return () => clearInterval(id);
   }, [value]);
-  return <>${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(disp)}</>;
+  return <>{fmtFull(disp)}</>;
 }
 
 // ── types ──────────────────────────────────────────────────────────────────
@@ -149,9 +158,11 @@ export default function PortfolioPage() {
       setSessions(s);
       if (acc && !acc.detail) setAlpaca(acc);
 
-      // compute real total assets from session balances, converting each to USD:
-      // use finishing_balance if set, otherwise fall back to starting_balance + pnl_value
-      const realTotalAssets = s.reduce((sum, x) => {
+      // compute real total assets ONLY from live/paper sessions — backtests
+      // reuse the same simulated capital across many runs so summing them
+      // inflates the figure massively. Live sessions represent real money.
+      const livePaper = s.filter(x => x.session_type === "live" || x.session_type === "paper");
+      const realTotalAssets = livePaper.reduce((sum, x) => {
         const cur = x.currency || "USD";
         const finishing = x.finishing_balance || 0;
         if (finishing > 0) return sum + toUsd(finishing, cur);
@@ -287,10 +298,15 @@ export default function PortfolioPage() {
     .slice(0, 6)
     .map(s => ({ name: s.name.slice(0, 18), value: Math.round((Math.abs(s.pnl) / totalAbsPnl) * 100) || Math.round((s.trades / totalTrades) * 100) }));
 
+  // separate simulated (backtest) vs real (live/paper) PnL
+  const backtestPnl = backtests.reduce((s, x) => s + toUsd(x.pnl_value || 0, x.currency), 0);
+  const livePaperPnl = liveSessions.reduce((s, x) => s + toUsd(x.pnl_value || 0, x.currency), 0);
+
   const dayPnlPct = equity > 0 ? (dayPnl / (equity - dayPnl)) * 100 : 0;
-  const availableCash = equity * 0.02;
-  const buyingPower = equity * 0.58;
-  const marginUsed = equity * 0.35;
+  // use Alpaca account data when available, otherwise derive from equity
+  const availableCash = alpaca?.cash ?? (equity * 0.15);
+  const buyingPower = alpaca?.buying_power ?? (equity * 0.60);
+  const marginUsed = alpaca ? (alpaca.long_market_value + alpaca.short_market_value) : (equity * 0.25);
 
   if (loading) return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center">
@@ -351,29 +367,44 @@ export default function PortfolioPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div>
               <p className="text-slate-400 text-xs mb-2 flex items-center gap-1">
-                <Globe size={12} className="text-amber-400" /> TOTAL ASSETS UNDER MANAGEMENT
+                <Globe size={12} className="text-amber-400" />
+                {equity > 0 ? "LIVE / PAPER ASSETS (USD)" : "PORTFOLIO SUMMARY"}
               </p>
               <div className="text-5xl font-black text-amber-400 tracking-tight mb-2">
-                <AnimatedNumber value={equity} />
+                {equity > 0 ? <AnimatedNumber value={equity} /> : <span className="text-slate-500 text-3xl">No live sessions</span>}
               </div>
-              <div className={`flex items-center gap-1 text-lg font-semibold ${dayPnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                {dayPnl >= 0 ? <ArrowUpRight size={20} /> : <ArrowDownRight size={20} />}
-                {fmtFull(Math.abs(dayPnl))} ({dayPnlPct >= 0 ? "+" : ""}{fmt(dayPnlPct, 3)}%) today
+              {equity > 0 && (
+                <div className={`flex items-center gap-1 text-base font-semibold ${dayPnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  {dayPnl >= 0 ? <ArrowUpRight size={18} /> : <ArrowDownRight size={18} />}
+                  {fmtC(Math.abs(dayPnl))} ({dayPnlPct >= 0 ? "+" : ""}{fmt(dayPnlPct, 3)}%) today
+                </div>
+              )}
+              <div className="mt-3 space-y-1">
+                <p className="text-slate-500 text-xs flex justify-between">
+                  <span>Live / Paper PnL</span>
+                  <span className={livePaperPnl >= 0 ? "text-emerald-400 font-semibold" : "text-red-400 font-semibold"}>{fmtC(livePaperPnl)}</span>
+                </p>
+                <p className="text-slate-500 text-xs flex justify-between">
+                  <span>Simulated (Backtest) PnL</span>
+                  <span className={backtestPnl >= 0 ? "text-blue-400 font-semibold" : "text-red-400 font-semibold"}>{fmtC(backtestPnl)}</span>
+                </p>
+                <p className="text-slate-600 text-xs flex justify-between border-t border-slate-800 pt-1 mt-1">
+                  <span>All sessions combined</span>
+                  <span className={totalPnl >= 0 ? "text-slate-300 font-semibold" : "text-red-400 font-semibold"}>{fmtC(totalPnl)}</span>
+                </p>
               </div>
-              <p className="text-slate-500 text-xs mt-1">
-                Total realised PnL from DB: <span className="text-emerald-400 font-semibold">{fmtC(totalPnl)}</span>
-              </p>
             </div>
             <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
-                { label: "Available Cash", value: fmtC(availableCash), color: "text-blue-400" },
-                { label: "Buying Power", value: fmtC(buyingPower), color: "text-purple-400" },
-                { label: "Margin Used", value: fmtC(marginUsed), color: "text-orange-400" },
-                { label: "Realised PnL", value: fmtC(totalPnl), color: totalPnl >= 0 ? "text-emerald-400" : "text-red-400" },
+                { label: "Available Cash", value: fmtC(availableCash), sub: alpaca ? "Alpaca" : "Est.", color: "text-blue-400" },
+                { label: "Buying Power", value: fmtC(buyingPower), sub: alpaca ? "Alpaca" : "Est.", color: "text-purple-400" },
+                { label: "Positions Value", value: fmtC(marginUsed), sub: alpaca ? "Long + Short" : "Est.", color: "text-orange-400" },
+                { label: "Live P&L", value: fmtC(livePaperPnl), sub: `${liveSessions.length} sessions`, color: livePaperPnl >= 0 ? "text-emerald-400" : "text-red-400" },
               ].map(m => (
                 <div key={m.label} className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4">
-                  <p className="text-slate-400 text-xs mb-2">{m.label}</p>
-                  <p className={`font-bold text-base ${m.color}`}>{m.value}</p>
+                  <p className="text-slate-400 text-xs mb-1">{m.label}</p>
+                  <p className={`font-bold text-lg ${m.color}`}>{m.value}</p>
+                  {m.sub && <p className="text-slate-600 text-[10px] mt-0.5">{m.sub}</p>}
                 </div>
               ))}
             </div>

@@ -45,6 +45,9 @@ class TradingBot:
         self._base_price = self._seed_price(symbol)
         self._stop_price = 0.0
         self._tp_price = 0.0
+        self._equity_snapshots: List[dict] = []
+        self._completed_trades: List[dict] = []
+        self._snapshot_interval = 5   # record equity every N ticks
 
     def _seed_price(self, symbol: str) -> float:
         seeds = {
@@ -298,6 +301,16 @@ class TradingBot:
                         f"EXIT-{reason} LONG {self.symbol} @ ${exit_price:,.4f} | "
                         f"P&L: {'+'if pnl>=0 else ''}{pnl:.4f} USD | Trade #{self.trades_count}"
                     )
+                    self._completed_trades.append({
+                        "id": self.trades_count,
+                        "side": "LONG",
+                        "entry": round(self.position_entry, 4),
+                        "exit": round(exit_price, 4),
+                        "qty": round(self.position_size, 6),
+                        "pnl": round(pnl, 4),
+                        "reason": reason,
+                        "time": datetime.utcnow().strftime("%H:%M:%S"),
+                    })
                     self.position = None
                     self.position_entry = 0.0
                     self.position_size = 0.0
@@ -321,6 +334,16 @@ class TradingBot:
                         f"EXIT-{reason} SHORT {self.symbol} @ ${exit_price:,.4f} | "
                         f"P&L: {'+'if pnl>=0 else ''}{pnl:.4f} USD | Trade #{self.trades_count}"
                     )
+                    self._completed_trades.append({
+                        "id": self.trades_count,
+                        "side": "SHORT",
+                        "entry": round(self.position_entry, 4),
+                        "exit": round(exit_price, 4),
+                        "qty": round(self.position_size, 6),
+                        "pnl": round(pnl, 4),
+                        "reason": reason,
+                        "time": datetime.utcnow().strftime("%H:%M:%S"),
+                    })
                     self.position = None
                     self.position_entry = 0.0
                     self.position_size = 0.0
@@ -336,6 +359,19 @@ class TradingBot:
                 self.equity_usd = self.balance_usd
 
             self.pnl_usd = self.equity_usd - self.amount_usd
+
+            # record equity snapshot every N ticks
+            _tick_count = len(self._price_history)
+            if _tick_count % self._snapshot_interval == 0:
+                self._equity_snapshots.append({
+                    "t": _tick_count,
+                    "equity": round(self.equity_usd, 2),
+                    "price": round(price, 4),
+                })
+                # cap snapshots to avoid unbounded growth
+                if len(self._equity_snapshots) > 500:
+                    self._equity_snapshots = self._equity_snapshots[-500:]
+
             time.sleep(tick_interval)
 
         self._log(f"Bot stopped | Final equity: ${self.equity_usd:,.2f} | P&L: {'+'if self.pnl_usd>=0 else ''}{self.pnl_usd:.2f} USD")
@@ -365,6 +401,7 @@ class TradingBot:
                 "shorts_count": 0,
                 "fee": 0.0,
             }
+            eq_curve = [{"equity": s["equity"], "timestamp": s["t"]} for s in self._equity_snapshots]
             save_session(
                 session_type=session_type,
                 strategy=self.strategy,
@@ -374,8 +411,8 @@ class TradingBot:
                 start_date=self.created_at[:10],
                 end_date=_dt.utcnow().isoformat()[:10],
                 metrics=metrics,
-                equity_curve=[],
-                notes=f"Live bot session — runtime {int(self.runtime)}s",
+                equity_curve=eq_curve,
+                notes=f"Live bot session — runtime {int(self.runtime)}s | {len(self._completed_trades)} trades tracked",
                 currency=self.currency,
             )
         except Exception as e:
@@ -428,6 +465,8 @@ class TradingBot:
             "trades_count": self.trades_count,
             "win_rate": win_rate,
             "logs": self.logs[-30:],
+            "equity_snapshots": self._equity_snapshots[-100:],
+            "completed_trades": self._completed_trades[-50:],
         }
 
 

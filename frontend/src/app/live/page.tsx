@@ -4,8 +4,12 @@ import { useState, useEffect, useCallback } from "react";
 import {
     Radio, Play, Square, Activity, Terminal, Trash2,
     Bot, TrendingUp, TrendingDown, Box, Clock,
-    Wallet, List, RefreshCw, AlertTriangle, CheckCircle, ExternalLink
+    Wallet, List, RefreshCw, AlertTriangle, CheckCircle, ExternalLink,
+    ChevronDown, ChevronUp, BarChart2
 } from "lucide-react";
+import {
+    LineChart, Line, ResponsiveContainer, Tooltip as RechartTooltip, XAxis, YAxis
+} from "recharts";
 import { toast } from "sonner";
 
 const CURRENCIES = [
@@ -669,9 +673,12 @@ function InfoRow({ label, value, accent }: { label: string; value: any; accent?:
 
 function BotCard({ bot, isSelected, onSelect, onStop, onDelete, strategies, onSwitchStrategy, isSwitching }: any) {
     const [showStrategyPicker, setShowStrategyPicker] = useState(false);
+    const [showDetails, setShowDetails] = useState(false);
     const pnlPositive = bot.pnl_pct >= 0;
     const sym = bot.currency_symbol;
     const isAlpaca = isAlpacaExchange(bot.exchange);
+    const equitySnapshots: any[] = bot.equity_snapshots ?? [];
+    const completedTrades: any[] = bot.completed_trades ?? [];
 
     return (
         <div
@@ -733,6 +740,16 @@ function BotCard({ bot, isSelected, onSelect, onStop, onDelete, strategies, onSw
                     )}
                 </div>
                 <div className="flex items-center gap-2">
+                    <button
+                        onClick={e => { e.stopPropagation(); setShowDetails(v => !v); }}
+                        className={`p-1.5 rounded-lg transition-colors text-xs flex items-center gap-1 border ${
+                            showDetails ? "bg-slate-700 border-slate-600 text-white" : "border-slate-700 text-slate-500 hover:text-white hover:bg-slate-800"
+                        }`}
+                        title="Show trade details & equity curve"
+                    >
+                        <BarChart2 size={13} />
+                        {showDetails ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                    </button>
                     {bot.is_running ? (
                         <button
                             onClick={e => { e.stopPropagation(); onStop(); }}
@@ -766,6 +783,88 @@ function BotCard({ bot, isSelected, onSelect, onStop, onDelete, strategies, onSw
                     sub={bot.is_running ? "Running" : "Stopped"}
                 />
             </div>
+
+            {/* ── Expandable details: equity curve + trades ── */}
+            {showDetails && (
+                <div
+                    onClick={e => e.stopPropagation()}
+                    className="mt-5 pt-4 border-t border-slate-800 space-y-4"
+                >
+                    {/* Mini equity curve */}
+                    <div>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-2 flex items-center gap-1">
+                            <BarChart2 size={10} /> Equity Curve
+                            {equitySnapshots.length === 0 && <span className="text-slate-600 ml-1 normal-case font-normal">(awaiting data…)</span>}
+                        </p>
+                        {equitySnapshots.length > 1 ? (
+                            <ResponsiveContainer width="100%" height={90}>
+                                <LineChart data={equitySnapshots} margin={{ top: 2, right: 4, left: 0, bottom: 2 }}>
+                                    <XAxis dataKey="t" hide />
+                                    <YAxis domain={["auto", "auto"]} hide />
+                                    <RechartTooltip
+                                        contentStyle={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 8, fontSize: 11 }}
+                                        formatter={(v: any) => [`$${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, "Equity"]}
+                                        labelFormatter={(l: any) => `Tick ${l}`}
+                                    />
+                                    <Line
+                                        type="monotone"
+                                        dataKey="equity"
+                                        stroke={pnlPositive ? "#34d399" : "#f87171"}
+                                        strokeWidth={2}
+                                        dot={false}
+                                        isAnimationActive={false}
+                                    />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="h-[90px] flex items-center justify-center bg-slate-800/30 rounded-lg">
+                                <p className="text-slate-600 text-xs">Bot needs more ticks to generate chart</p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Completed trades table */}
+                    <div>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-2 flex items-center gap-1">
+                            <List size={10} /> Completed Trades ({completedTrades.length})
+                        </p>
+                        {completedTrades.length === 0 ? (
+                            <p className="text-slate-600 text-xs py-2">No completed trades yet</p>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-[11px]">
+                                    <thead>
+                                        <tr className="text-slate-500 border-b border-slate-800">
+                                            <th className="text-left pb-1 font-semibold">#</th>
+                                            <th className="text-left pb-1 font-semibold">Side</th>
+                                            <th className="text-right pb-1 font-semibold">Entry</th>
+                                            <th className="text-right pb-1 font-semibold">Exit</th>
+                                            <th className="text-right pb-1 font-semibold">P&L (USD)</th>
+                                            <th className="text-right pb-1 font-semibold">Reason</th>
+                                            <th className="text-right pb-1 font-semibold">Time</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {[...completedTrades].reverse().slice(0, 15).map((tr: any) => (
+                                            <tr key={tr.id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
+                                                <td className="py-1 text-slate-500">{tr.id}</td>
+                                                <td className={`py-1 font-bold ${tr.side === "LONG" ? "text-emerald-400" : "text-red-400"}`}>{tr.side}</td>
+                                                <td className="py-1 text-right font-mono text-slate-300">${tr.entry.toLocaleString()}</td>
+                                                <td className="py-1 text-right font-mono text-slate-300">${tr.exit.toLocaleString()}</td>
+                                                <td className={`py-1 text-right font-mono font-bold ${tr.pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                                                    {tr.pnl >= 0 ? "+" : ""}{tr.pnl.toFixed(4)}
+                                                </td>
+                                                <td className={`py-1 text-right text-[10px] ${tr.reason === "TP" ? "text-emerald-600" : "text-orange-500"}`}>{tr.reason}</td>
+                                                <td className="py-1 text-right font-mono text-slate-600">{tr.time}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
