@@ -112,6 +112,7 @@ export default function PortfolioPage() {
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [activeBots, setActiveBots] = useState(0);
   const [totalBots, setTotalBots] = useState(0);
+  const [liveMode, setLiveMode] = useState(false);
   const dayPnlRef = useRef(0);
 
   // ── fetch real data ──────────────────────────────────────────────────────
