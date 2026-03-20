@@ -13,6 +13,10 @@ from trade_history import (
     init_history_table, save_session, list_sessions,
     get_session, delete_session, update_notes
 )
+from transactions import (
+    init_transactions_table, create_transaction,
+    verify_otp, list_transactions, get_transaction_summary
+)
 
 app = FastAPI(title="Quant Trading Platform API")
 
@@ -150,6 +154,7 @@ def get_backtest_results():
 # ---------------------------------------------------------------------------
 
 init_history_table()
+init_transactions_table()
 
 class HistorySaveRequest(BaseModel):
     session_type: str = "backtest"
@@ -705,3 +710,76 @@ def get_dashboard_summary():
         "logs": logs,
         "jesse_running": jesse_mgr.is_running,
     }
+
+
+# ---------------------------------------------------------------------------
+# Fund Transaction Endpoints (Deposit / Withdraw)
+# ---------------------------------------------------------------------------
+
+class TransactionRequest(BaseModel):
+    type: str
+    amount: float
+    currency: str = "USD"
+    bank_name: str
+    account_number: str
+    account_name: str
+    notes: str = ""
+
+class OTPVerifyRequest(BaseModel):
+    transaction_id: str
+    otp: str
+
+@app.get("/transactions")
+def get_transactions():
+    txs = list_transactions(limit=200)
+    summary = get_transaction_summary()
+    return {"transactions": txs, "summary": summary}
+
+@app.post("/transactions/deposit")
+def make_deposit(req: TransactionRequest):
+    if req.amount <= 0:
+        raise HTTPException(400, "Amount must be positive")
+    if not req.bank_name.strip():
+        raise HTTPException(400, "Bank name is required")
+    if not req.account_number.strip():
+        raise HTTPException(400, "Account number is required")
+    if not req.account_name.strip():
+        raise HTTPException(400, "Account name is required")
+    tx = create_transaction(
+        tx_type="deposit",
+        amount=req.amount,
+        currency=req.currency,
+        bank_name=req.bank_name,
+        account_number=req.account_number,
+        account_name=req.account_name,
+        notes=req.notes,
+    )
+    return tx
+
+@app.post("/transactions/withdraw")
+def make_withdraw(req: TransactionRequest):
+    if req.amount <= 0:
+        raise HTTPException(400, "Amount must be positive")
+    if not req.bank_name.strip():
+        raise HTTPException(400, "Bank name is required")
+    if not req.account_number.strip():
+        raise HTTPException(400, "Account number is required")
+    if not req.account_name.strip():
+        raise HTTPException(400, "Account name is required")
+    tx = create_transaction(
+        tx_type="withdraw",
+        amount=req.amount,
+        currency=req.currency,
+        bank_name=req.bank_name,
+        account_number=req.account_number,
+        account_name=req.account_name,
+        notes=req.notes,
+    )
+    return tx
+
+@app.post("/transactions/verify-otp")
+def confirm_otp(req: OTPVerifyRequest):
+    result = verify_otp(req.transaction_id, req.otp)
+    if not result["ok"]:
+        raise HTTPException(400, result["error"])
+    return result

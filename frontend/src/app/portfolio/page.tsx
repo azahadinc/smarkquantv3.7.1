@@ -4,7 +4,9 @@ import { useState, useEffect, useRef } from "react";
 import {
   TrendingUp, TrendingDown, DollarSign, BarChart2, Activity,
   Shield, Briefcase, ArrowUpRight, ArrowDownRight,
-  Clock, Zap, Globe, Award, PieChart, Database, RefreshCw
+  Clock, Zap, Globe, Award, PieChart, Database, RefreshCw,
+  Wallet, ArrowDownToLine, ArrowUpFromLine, X, CheckCircle2,
+  Building2, CreditCard, User, Hash, AlertCircle, Copy, Check
 } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar,
@@ -139,8 +141,29 @@ export default function PortfolioPage() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [alpaca, setAlpaca] = useState<AlpacaAccount | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"overview" | "strategies" | "risk" | "trades">("overview");
+  const [tab, setTab] = useState<"overview" | "strategies" | "risk" | "trades" | "wallet">("overview");
   const [equity, setEquity] = useState(BASE_EQUITY);
+
+  // ── wallet state ─────────────────────────────────────────────────────────
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [txSummary, setTxSummary] = useState<any>(null);
+  const [txLoading, setTxLoading] = useState(false);
+  const [showDepositModal, setShowDepositModal] = useState(false);
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [txForm, setTxForm] = useState({ bank_name: "", account_number: "", account_name: "", amount: "", currency: "USD" });
+  const [txPending, setTxPending] = useState<any>(null);
+  const [otpInput, setOtpInput] = useState("");
+  const [txSubmitting, setTxSubmitting] = useState(false);
+  const [txError, setTxError] = useState("");
+  const [otpCopied, setOtpCopied] = useState(false);
+
+  const fetchTransactions = () => {
+    setTxLoading(true);
+    fetch("/api/transactions").then(r => r.json()).then(d => {
+      setTransactions(d.transactions || []);
+      setTxSummary(d.summary || null);
+    }).catch(() => {}).finally(() => setTxLoading(false));
+  };
   const [dayPnl, setDayPnl] = useState(0);
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [activeBots, setActiveBots] = useState(0);
@@ -180,6 +203,9 @@ export default function PortfolioPage() {
       setLoading(false);
     });
   }, []);
+
+  // ── fetch transactions when wallet tab is opened ─────────────────────────
+  useEffect(() => { if (tab === "wallet") fetchTransactions(); }, [tab]);
 
   // ── poll bot status every 5s ─────────────────────────────────────────────
   useEffect(() => {
@@ -412,10 +438,11 @@ export default function PortfolioPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-slate-900 border border-slate-800 rounded-xl p-1 w-fit">
-          {(["overview", "strategies", "risk", "trades"] as const).map(t => (
+        <div className="flex gap-1 bg-slate-900 border border-slate-800 rounded-xl p-1 w-fit flex-wrap">
+          {(["overview", "strategies", "risk", "trades", "wallet"] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
-              className={`px-5 py-2 rounded-lg text-sm font-medium capitalize transition-all ${tab === t ? "bg-amber-500 text-black" : "text-slate-400 hover:text-white"}`}>
+              className={`px-5 py-2 rounded-lg text-sm font-medium capitalize transition-all flex items-center gap-1.5 ${tab === t ? "bg-amber-500 text-black" : "text-slate-400 hover:text-white"}`}>
+              {t === "wallet" && <Wallet size={13} />}
               {t}
             </button>
           ))}
@@ -820,6 +847,306 @@ export default function PortfolioPage() {
                   <Bar dataKey="losses" name="Losses" fill="#ef4444" stackId="a" radius={[2, 2, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════ WALLET ══════════════════ */}
+        {tab === "wallet" && (
+          <div className="space-y-6">
+            {/* Summary cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { label: "Total Deposited", value: fmtC(txSummary?.total_deposited_usd ?? 0), color: "text-emerald-400", icon: <ArrowDownToLine size={14} className="text-emerald-400" /> },
+                { label: "Total Withdrawn", value: fmtC(txSummary?.total_withdrawn_usd ?? 0), color: "text-red-400", icon: <ArrowUpFromLine size={14} className="text-red-400" /> },
+                { label: "Net Balance", value: fmtC(txSummary?.net_usd ?? 0), color: (txSummary?.net_usd ?? 0) >= 0 ? "text-amber-400" : "text-red-400", icon: <Wallet size={14} className="text-amber-400" /> },
+                { label: "Pending", value: (txSummary?.pending_count ?? 0).toString(), color: "text-yellow-400", icon: <AlertCircle size={14} className="text-yellow-400" /> },
+              ].map(c => (
+                <div key={c.label} className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+                  <div className="flex items-center gap-2 mb-2">{c.icon}<p className="text-slate-500 text-xs">{c.label}</p></div>
+                  <p className={`text-2xl font-black ${c.color}`}>{c.value}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Action buttons */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <button
+                onClick={() => { setShowDepositModal(true); setTxForm({ bank_name: "", account_number: "", account_name: "", amount: "", currency: "USD" }); setTxPending(null); setOtpInput(""); setTxError(""); }}
+                className="flex items-center justify-center gap-3 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 rounded-2xl p-6 transition-all group"
+              >
+                <ArrowDownToLine size={24} className="group-hover:scale-110 transition-transform" />
+                <div className="text-left">
+                  <p className="font-black text-lg">Deposit Funds</p>
+                  <p className="text-xs text-emerald-600">Add funds to your account</p>
+                </div>
+              </button>
+              <button
+                onClick={() => { setShowWithdrawModal(true); setTxForm({ bank_name: "", account_number: "", account_name: "", amount: "", currency: "USD" }); setTxPending(null); setOtpInput(""); setTxError(""); }}
+                className="flex items-center justify-center gap-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-2xl p-6 transition-all group"
+              >
+                <ArrowUpFromLine size={24} className="group-hover:scale-110 transition-transform" />
+                <div className="text-left">
+                  <p className="font-black text-lg">Withdraw Funds</p>
+                  <p className="text-xs text-red-600">Withdraw to your bank account</p>
+                </div>
+              </button>
+            </div>
+
+            {/* Transaction history */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold flex items-center gap-2">
+                  <Database size={18} className="text-amber-400" /> Transaction History
+                </h2>
+                <button onClick={fetchTransactions} className="p-1.5 hover:bg-slate-800 rounded-lg transition-colors text-slate-400 hover:text-white">
+                  <RefreshCw size={14} className={txLoading ? "animate-spin" : ""} />
+                </button>
+              </div>
+              {transactions.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <Wallet size={40} className="text-slate-700 mb-3" />
+                  <p className="text-slate-500 font-medium">No transactions yet</p>
+                  <p className="text-slate-600 text-sm mt-1">Use the buttons above to make your first deposit or withdrawal</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-slate-500 text-xs border-b border-slate-800">
+                        <th className="text-left pb-3 font-semibold">Reference</th>
+                        <th className="text-left pb-3 font-semibold">Type</th>
+                        <th className="text-left pb-3 font-semibold">Bank / Account</th>
+                        <th className="text-right pb-3 font-semibold">Amount</th>
+                        <th className="text-center pb-3 font-semibold">Status</th>
+                        <th className="text-right pb-3 font-semibold">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/50">
+                      {transactions.map(tx => (
+                        <tr key={tx.id} className="hover:bg-slate-800/30 transition-colors">
+                          <td className="py-3 font-mono text-xs text-slate-400">{tx.reference}</td>
+                          <td className="py-3">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${
+                              tx.type === "deposit" ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"
+                            }`}>
+                              {tx.type === "deposit" ? <ArrowDownToLine size={9} /> : <ArrowUpFromLine size={9} />}
+                              {tx.type.charAt(0).toUpperCase() + tx.type.slice(1)}
+                            </span>
+                          </td>
+                          <td className="py-3">
+                            <p className="text-white font-medium text-xs">{tx.bank_name}</p>
+                            <p className="text-slate-500 text-xs">{tx.account_name} · {tx.account_number}</p>
+                          </td>
+                          <td className="py-3 text-right">
+                            <p className={`font-black ${tx.type === "deposit" ? "text-emerald-400" : "text-red-400"}`}>
+                              {tx.type === "deposit" ? "+" : "-"}{currSym(tx.currency)}{Number(tx.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </p>
+                            <p className="text-slate-600 text-xs">{tx.currency}</p>
+                          </td>
+                          <td className="py-3 text-center">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
+                              tx.status === "completed" ? "bg-emerald-500/10 text-emerald-400" :
+                              tx.status === "failed" ? "bg-red-500/10 text-red-400" :
+                              "bg-yellow-500/10 text-yellow-400"
+                            }`}>
+                              {tx.status === "completed" ? <CheckCircle2 size={9} /> : tx.status === "failed" ? <X size={9} /> : <AlertCircle size={9} />}
+                              {tx.status.charAt(0).toUpperCase() + tx.status.slice(1)}
+                            </span>
+                          </td>
+                          <td className="py-3 text-right text-slate-500 text-xs font-mono">
+                            {tx.created_at?.slice(0, 16).replace("T", " ")}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════ DEPOSIT / WITHDRAW MODALS ══════════════ */}
+        {(showDepositModal || showWithdrawModal) && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+            <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-md shadow-2xl">
+              {/* Modal header */}
+              <div className={`flex items-center justify-between p-6 border-b border-slate-800`}>
+                <div className="flex items-center gap-3">
+                  {showDepositModal
+                    ? <div className="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center"><ArrowDownToLine className="text-emerald-400" size={20} /></div>
+                    : <div className="w-10 h-10 bg-red-500/10 rounded-xl flex items-center justify-center"><ArrowUpFromLine className="text-red-400" size={20} /></div>
+                  }
+                  <div>
+                    <h3 className="font-black text-lg">{showDepositModal ? "Deposit Funds" : "Withdraw Funds"}</h3>
+                    <p className="text-slate-500 text-xs">{showDepositModal ? "Add funds to your portfolio" : "Withdraw to your bank account"}</p>
+                  </div>
+                </div>
+                <button onClick={() => { setShowDepositModal(false); setShowWithdrawModal(false); setTxPending(null); setTxError(""); }}
+                  className="p-2 hover:bg-slate-800 rounded-xl transition-colors text-slate-400 hover:text-white">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                {/* Step 1: Form */}
+                {!txPending && (
+                  <>
+                    {txError && (
+                      <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 text-red-400 text-sm">
+                        <AlertCircle size={14} className="flex-shrink-0" /> {txError}
+                      </div>
+                    )}
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs font-semibold text-slate-400 flex items-center gap-1.5 mb-1.5"><Building2 size={11} /> Bank Name</label>
+                        <input
+                          value={txForm.bank_name}
+                          onChange={e => setTxForm(f => ({ ...f, bank_name: e.target.value }))}
+                          placeholder="e.g. GTBank, Access Bank, Chase…"
+                          className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-amber-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-400 flex items-center gap-1.5 mb-1.5"><Hash size={11} /> Account Number</label>
+                        <input
+                          value={txForm.account_number}
+                          onChange={e => setTxForm(f => ({ ...f, account_number: e.target.value }))}
+                          placeholder="e.g. 0123456789"
+                          className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-amber-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-400 flex items-center gap-1.5 mb-1.5"><User size={11} /> Account Name</label>
+                        <input
+                          value={txForm.account_name}
+                          onChange={e => setTxForm(f => ({ ...f, account_name: e.target.value }))}
+                          placeholder="e.g. John Doe"
+                          className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-amber-500"
+                        />
+                      </div>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="col-span-2">
+                          <label className="text-xs font-semibold text-slate-400 flex items-center gap-1.5 mb-1.5"><DollarSign size={11} /> Amount</label>
+                          <input
+                            type="number" min="0"
+                            value={txForm.amount}
+                            onChange={e => setTxForm(f => ({ ...f, amount: e.target.value }))}
+                            placeholder="0.00"
+                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-slate-400 mb-1.5 block">Currency</label>
+                          <select
+                            value={txForm.currency}
+                            onChange={e => setTxForm(f => ({ ...f, currency: e.target.value }))}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500"
+                          >
+                            {Object.keys(CURRENCY_TO_USD).map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      disabled={txSubmitting}
+                      onClick={async () => {
+                        setTxError("");
+                        if (!txForm.bank_name || !txForm.account_number || !txForm.account_name || !txForm.amount) {
+                          setTxError("Please fill in all fields"); return;
+                        }
+                        if (parseFloat(txForm.amount) <= 0) { setTxError("Amount must be greater than 0"); return; }
+                        setTxSubmitting(true);
+                        const endpoint = showDepositModal ? "/api/transactions/deposit" : "/api/transactions/withdraw";
+                        const res = await fetch(endpoint, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ type: showDepositModal ? "deposit" : "withdraw", ...txForm, amount: parseFloat(txForm.amount) }),
+                        });
+                        setTxSubmitting(false);
+                        if (!res.ok) { const d = await res.json(); setTxError(d.detail || "Request failed"); return; }
+                        const data = await res.json();
+                        setTxPending(data);
+                        setOtpInput("");
+                      }}
+                      className={`w-full py-3 rounded-xl font-black text-sm transition-all ${
+                        showDepositModal ? "bg-emerald-500 hover:bg-emerald-400 text-black" : "bg-red-500 hover:bg-red-400 text-white"
+                      } disabled:opacity-50`}
+                    >
+                      {txSubmitting ? "Processing…" : showDepositModal ? "Request Deposit" : "Request Withdrawal"}
+                    </button>
+                  </>
+                )}
+
+                {/* Step 2: OTP verification */}
+                {txPending && (
+                  <div className="space-y-5">
+                    <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-5 text-center">
+                      <p className="text-slate-400 text-xs mb-2">Your OTP Code</p>
+                      <div className="flex items-center justify-center gap-3">
+                        <p className="text-4xl font-black tracking-[0.3em] text-amber-400">{txPending.otp_code}</p>
+                        <button
+                          onClick={() => { navigator.clipboard.writeText(txPending.otp_code); setOtpCopied(true); setTimeout(() => setOtpCopied(false), 2000); }}
+                          className="p-1.5 hover:bg-slate-800 rounded-lg transition-colors text-slate-500 hover:text-amber-400"
+                        >
+                          {otpCopied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                        </button>
+                      </div>
+                      <p className="text-slate-500 text-xs mt-2">Enter this code below to confirm your {txPending.type}</p>
+                      <p className="text-slate-600 text-[10px] mt-1 font-mono">Ref: {txPending.reference}</p>
+                    </div>
+
+                    {txError && (
+                      <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 text-red-400 text-sm">
+                        <AlertCircle size={14} /> {txError}
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="text-xs font-semibold text-slate-400 flex items-center gap-1.5 mb-1.5"><Shield size={11} /> Enter OTP to Confirm</label>
+                      <input
+                        type="text" maxLength={6}
+                        value={otpInput}
+                        onChange={e => setOtpInput(e.target.value.replace(/\D/g, ""))}
+                        placeholder="6-digit OTP"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-2xl font-black tracking-[0.3em] text-white placeholder-slate-700 text-center focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        onClick={() => { setTxPending(null); setTxError(""); }}
+                        className="py-3 rounded-xl font-semibold text-sm bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all"
+                      >
+                        Go Back
+                      </button>
+                      <button
+                        disabled={txSubmitting || otpInput.length !== 6}
+                        onClick={async () => {
+                          setTxError("");
+                          setTxSubmitting(true);
+                          const res = await fetch("/api/transactions/verify-otp", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ transaction_id: txPending.id, otp: otpInput }),
+                          });
+                          setTxSubmitting(false);
+                          if (!res.ok) { const d = await res.json(); setTxError(d.detail || "Invalid OTP"); return; }
+                          setShowDepositModal(false); setShowWithdrawModal(false);
+                          setTxPending(null); setOtpInput("");
+                          fetchTransactions();
+                        }}
+                        className={`py-3 rounded-xl font-black text-sm transition-all ${
+                          showDepositModal ? "bg-emerald-500 hover:bg-emerald-400 text-black" : "bg-red-500 hover:bg-red-400 text-white"
+                        } disabled:opacity-40`}
+                      >
+                        {txSubmitting ? "Verifying…" : "Confirm"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
