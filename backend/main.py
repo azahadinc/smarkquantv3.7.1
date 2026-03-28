@@ -3,11 +3,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
 import subprocess
+from dotenv import load_dotenv
 import json
 import shutil
 import threading
 import time
 from bot_manager import bot_manager
+from alpaca_utils import get_alpaca_credentials
 from db_config import DB_PATH
 from trade_history import (
     init_history_table, save_session, list_sessions,
@@ -18,6 +20,8 @@ from transactions import (
     verify_otp, list_transactions, get_transaction_summary
 )
 
+root_env = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".env"))
+load_dotenv(dotenv_path=root_env, override=False)
 app = FastAPI(title="Quant Trading Platform API")
 
 # Process Management for Jesse
@@ -406,10 +410,9 @@ def get_alpaca_quote(symbol: str):
 
 def _get_alpaca_trading_client(paper: bool = False):
     """Helper: return an Alpaca TradingClient or raise 503."""
-    api_key = os.environ.get("ALPACA_API_KEY", "")
-    secret_key = os.environ.get("ALPACA_SECRET_KEY", "")
+    api_key, secret_key = get_alpaca_credentials()
     if not api_key or not secret_key:
-        raise HTTPException(status_code=503, detail="Alpaca API keys not configured. Add ALPACA_API_KEY and ALPACA_SECRET_KEY in Secrets.")
+        raise HTTPException(status_code=503, detail="Alpaca API keys not configured. Add ALPACA_API_KEY and ALPACA_SECRET_KEY (or APCA_API_KEY_ID/APCA_API_SECRET_KEY) in environment variables.")
     try:
         from alpaca.trading.client import TradingClient
         return TradingClient(api_key, secret_key, paper=paper)

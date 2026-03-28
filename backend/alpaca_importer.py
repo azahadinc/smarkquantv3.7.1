@@ -9,11 +9,13 @@ import sqlite3
 import uuid
 import sys
 from datetime import datetime, timezone
+from dotenv import load_dotenv
 
+root_env = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".env"))
+load_dotenv(dotenv_path=root_env, override=False)
+
+from alpaca_utils import get_alpaca_credentials
 from db_config import DB_PATH
-
-ALPACA_API_KEY = os.environ.get("ALPACA_API_KEY", "")
-ALPACA_SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "")
 
 
 def _ensure_table(conn: sqlite3.Connection):
@@ -39,8 +41,9 @@ def _ensure_table(conn: sqlite3.Connection):
 
 def import_alpaca_stock(symbol: str, start_date: str, timeframe: str = "1Day", exchange: str = "alpaca"):
     """Fetch stock bars from Alpaca and persist to SQLite."""
-    if not ALPACA_API_KEY or not ALPACA_SECRET_KEY:
-        print("[ERROR] ALPACA_API_KEY / ALPACA_SECRET_KEY not set in environment.")
+    api_key, secret_key = get_alpaca_credentials()
+    if not api_key or not secret_key:
+        print("[ERROR] Alpaca API keys not configured. Add ALPACA_API_KEY/ALPACA_SECRET_KEY or APCA_API_KEY_ID/APCA_API_SECRET_KEY.")
         return
 
     try:
@@ -65,7 +68,7 @@ def import_alpaca_stock(symbol: str, start_date: str, timeframe: str = "1Day", e
     }
     tf = TF_MAP.get(timeframe, TimeFrame(1, TimeFrameUnit.Day))
 
-    client = StockHistoricalDataClient(ALPACA_API_KEY, ALPACA_SECRET_KEY)
+    client = StockHistoricalDataClient(api_key, secret_key)
 
     start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     end_dt = datetime.now(timezone.utc)
@@ -113,8 +116,9 @@ def import_alpaca_stock(symbol: str, start_date: str, timeframe: str = "1Day", e
 
 def import_alpaca_crypto(symbol: str, start_date: str, timeframe: str = "1Day", exchange: str = "alpaca"):
     """Fetch crypto bars from Alpaca (free, no key needed for crypto on paper)."""
-    if not ALPACA_API_KEY or not ALPACA_SECRET_KEY:
-        print("[ERROR] ALPACA_API_KEY / ALPACA_SECRET_KEY not set in environment.")
+    api_key, secret_key = get_alpaca_credentials()
+    if not api_key or not secret_key:
+        print("[ERROR] Alpaca API keys not configured. Add ALPACA_API_KEY/ALPACA_SECRET_KEY or APCA_API_KEY_ID/APCA_API_SECRET_KEY.")
         return
 
     try:
@@ -140,7 +144,7 @@ def import_alpaca_crypto(symbol: str, start_date: str, timeframe: str = "1Day", 
     tf = TF_MAP.get(timeframe, TimeFrame(1, TimeFrameUnit.Day))
 
     # Crypto client works without keys on paper endpoint
-    client = CryptoHistoricalDataClient(ALPACA_API_KEY, ALPACA_SECRET_KEY)
+    client = CryptoHistoricalDataClient(api_key, secret_key)
 
     start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     end_dt = datetime.now(timezone.utc)

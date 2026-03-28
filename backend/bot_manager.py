@@ -5,10 +5,12 @@ import random
 import os
 from datetime import datetime
 from typing import Dict, List
+from dotenv import load_dotenv
 from strategy_engine import get_signals_streaming
+from alpaca_utils import get_alpaca_credentials
 
-ALPACA_API_KEY = os.environ.get("ALPACA_API_KEY", "")
-ALPACA_SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "")
+root_env = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".env"))
+load_dotenv(dotenv_path=root_env, override=False)
 
 from currency_utils import CURRENCY_SYMBOLS, CURRENCY_TO_USD, SUPPORTED_CURRENCIES
 
@@ -100,15 +102,16 @@ class TradingBot:
 
     def _alpaca_clients(self):
         """Return (trading_client, stock_data_client, crypto_data_client) or (None,None,None)."""
-        if not ALPACA_API_KEY or not ALPACA_SECRET_KEY:
+        api_key, secret_key = get_alpaca_credentials()
+        if not api_key or not secret_key:
             return None, None, None
         try:
             from alpaca.trading.client import TradingClient
             from alpaca.data.historical import StockHistoricalDataClient, CryptoHistoricalDataClient
             paper = self._alpaca_paper
-            tc = TradingClient(ALPACA_API_KEY, ALPACA_SECRET_KEY, paper=paper)
-            sc = StockHistoricalDataClient(ALPACA_API_KEY, ALPACA_SECRET_KEY)
-            cc = CryptoHistoricalDataClient(ALPACA_API_KEY, ALPACA_SECRET_KEY)
+            tc = TradingClient(api_key, secret_key, paper=paper)
+            sc = StockHistoricalDataClient(api_key, secret_key)
+            cc = CryptoHistoricalDataClient(api_key, secret_key)
             return tc, sc, cc
         except Exception as e:
             self._log(f"[ALPACA] Client init error: {e}")
