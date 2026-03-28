@@ -55,7 +55,18 @@ SmarkQuant is a sophisticated quantitative trading platform designed for strateg
    ```
 3. Install dependencies:
    ```bash
-   pip install "uvicorn[standard]>=0.29.0" pip install "pydantic>=2.0.0" pip install "python-multipart>=0.0.9" pip install "pandas>=2.0.0" pip install "numpy>=1.26.0" pip install "yfinance>=0.2.40" pip install "alpaca-py>=0.20.0" pip install "optuna>=3.6.0" pip install "jesse>=0.47.0" pip install "psycopg2-binary>=2.9.9" pip install "redis>=5.0.0"
+   pip install --upgrade pip setuptools wheel
+   pip install "uvicorn[standard]>=0.29.0" 
+   pip install "pydantic>=2.0.0" 
+   pip install "python-multipart>=0.0.9" 
+   pip install "pandas>=2.0.0" 
+   pip install "numpy>=1.26.0" 
+   pip install "yfinance>=0.2.40" 
+   pip install "alpaca-py>=0.20.0" 
+   pip install "optuna>=3.6.0" 
+   pip install "jesse>=0.47.0" 
+   pip install "psycopg2-binary>=2.9.9" 
+   pip install "redis>=5.0.0"
    ###
   
 
