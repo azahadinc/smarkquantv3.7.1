@@ -1,0 +1,15 @@
+# Ignore Python virtual environment
+/backend/venv/
+
+# Optional: common Python ignores
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+env/
+venv/
+.env
+.idea/
+.vscode/
+*.egg-info/
+.DS_Store
