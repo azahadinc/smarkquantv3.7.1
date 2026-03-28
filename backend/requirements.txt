@@ -7,6 +7,6 @@ numpy>=1.23.2
 yfinance==0.2.40
 alpaca-py==0.20.0
 optuna==3.6.0
-jesse>=1.0.0
+jesse>=1.13.0
 psycopg2-binary==2.9.9
 redis==5.0.0
